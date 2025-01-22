@@ -1,0 +1,18 @@
+version: 2.1
+
+jobs:
+  install_dependencies:
+    docker:
+      - image: circleci/node:latest
+    steps:
+      - checkout
+      - run: 
+          name: Install NPM dependencies
+          command: npm install
+
+workflows:
+  version: 2
+  deploy_workflow:
+    jobs:
+      - install_dependencies
+
