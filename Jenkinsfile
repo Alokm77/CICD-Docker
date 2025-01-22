@@ -1,4 +1,5 @@
 pipeline {
+	agent ant
 	
 	stages {
 		stage('GitHub'){
