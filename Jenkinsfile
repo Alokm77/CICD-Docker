@@ -1,5 +1,8 @@
 pipeline {
 	agent any
+	tools{
+		nodejs 'NodeJS
+	}
 	
 	stages {
 		stage('GitHub'){
@@ -9,6 +12,8 @@ pipeline {
 		}
 		stage('Unit Test'){
 			steps {
+				sh 'npm test'
+				sh 'npm install'
 			}
 		}
 	}
