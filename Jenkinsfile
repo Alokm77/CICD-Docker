@@ -8,7 +8,7 @@ pipeline {
 			}
 		}
 		stage('Unit Test'){
-			step {
+			steps {
 			}
 		}
 	}
