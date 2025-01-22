@@ -11,8 +11,8 @@ pipeline {
 		}
 		stage('Unit Test'){
 			steps {
-				sh 'npm test'
-				sh 'npm install'
+				sh 'npm install' // Install dependencies
+                		sh 'npm test'    // Run unit tests
 			}
 		}
 	}
