@@ -1,3 +1,4 @@
+A
 pipeline {
 	agent any
 	tools {
@@ -6,7 +7,7 @@ pipeline {
 	environment {
 		SONAR_PROJECT_KEY = 'complete-cicd-02'
 		SONAR_SCANNER_HOME = tool 'SonarQubeScanner'
-		JOB_NAME_NOW = 'cicd02'
+		JOB_Nhttps://github.com/Alokm77/CICD-Docker.gitAME_NOW = 'cicd02'
 		ECR_REPO = 'iquantawsrepo'
 		IMAGE_TAG = 'latest'
 		ECR_REGISTRY = '358966077154.dkr.ecr.us-east-1.amazonaws.com'
@@ -17,7 +18,7 @@ pipeline {
 	stages {
 		stage('GitHub'){
 			steps {
-				git branch: 'main', credentialsId: 'jen-git-dind', url: 'https://github.com/iQuantC/Complete_CICD_02.git'
+				git branch: 'main', credentialsId: 'Alokm77', url: 'https://github.com/Alokm77/CICD-Docker.git'
 			}
 		}
 		stage('Unit Test'){
