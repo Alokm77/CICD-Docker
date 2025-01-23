@@ -82,32 +82,28 @@ pipeline {
                 echo "Found existing Security Group with ID: ${securityGroupId}"
             }
 
-            echo "Checking for existing ingress rule..."
-            def ruleExists = sh(
-                script: """
-                aws ec2 describe-security-groups \
-                    --group-ids ${securityGroupId} \
-                    --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
-                    --output text
-                """,
-                returnStdout: true
-            ).trim()
+           script {
+    echo "Checking for existing ingress rule..."
+    def ruleExists = sh(
+        script: """
+        aws ec2 describe-security-groups \
+            --group-ids ${securityGroupId} \
+            --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
+            --output text
+        """,
+        returnStdout: true
+    ).trim()
 
-            if (ruleExists == "") {
-                echo "Ingress rule for port 80 doesn't exist. Adding it now."
-                sh """
-                aws ec2 authorize-security-group-ingress \
-                    --group-id ${securityGroupId} \
-                    --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                """
-                echo "Ingress rule added successfully."
-            } else {
-                echo "Ingress rule for port 80 already exists. Skipping rule creation."
-            }
-
-            // Export the Security Group ID for subsequent stages
-            env.SECURITY_GROUP_ID = securityGroupId
-        }
+    if (ruleExists == "") {
+        echo "Ingress rule for port 80 doesn't exist. Adding it now."
+        sh """
+        aws ec2 authorize-security-group-ingress \
+            --group-id ${securityGroupId} \
+            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+        """
+        echo "Ingress rule added successfully."
+    } else {
+        echo "Ingress rule for port 80 already exists. Skipping rule creation."
     }
 }
         stage('Create Application Load Balancer') {
