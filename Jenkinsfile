@@ -22,6 +22,9 @@ pipeline {
         ALB_NAME = 'dev-alb'
         TARGET_GROUP_NAME = 'dev-target-group'
         VPC_ID = 'vpc-0bd5e05b7eb883a10'  // Replace with your actual VPC ID
+        IMAGE_URL = "httpd:2.4"
+        CPU = "256"
+        MEMORY = "512"
     }
     stages {
         stage('Create ECR Repository') {
@@ -160,55 +163,58 @@ pipeline {
             }
         }
 
-     stage('Create ECS Task Definition') {
-    steps {
-        script {
-            def TASK_DEFINITION = """
-{
-   "containerDefinitions": [
-      {
-         "command": [
-            "/bin/sh -c \"echo '<html> <head> <title>Amazon ECS Sample App</title> <style>body {margin-top: 40px; background-color: #333;} </style> </head><body> <div style=color:white;text-align:center> <h1>Amazon ECS Sample App</h1> <h2>Congratulations!</h2> <p>Your application is now running on a container in Amazon ECS.</p> </div></body></html>' >  /usr/local/apache2/htdocs/index.html && httpd-foreground\""
-         ],
-         "entryPoint": [
-            "sh",
-            "-c"
-         ],
-         "essential": true,
-         "image": "$IMAGE_URL",
-         "logConfiguration": {
-            "logDriver": "awslogs",
-            "options": {
-               "awslogs-group" : "/ecs/fargate-task-definition",
-               "awslogs-region": "us-east-1",
-               "awslogs-stream-prefix": "ecs"
+        stage('Create ECS Task Definition') {
+            steps {
+                script {
+                    echo "Creating ECS Task Definition..."
+                    try {
+                        // Write the task definition JSON to a file
+                        sh '''
+                        cat > task-definition.json <<'EOF'
+                        {
+                            "family": "${TASK_DEFINITION_NAME}",
+                            "containerDefinitions": [
+                                {
+                                    "name": "${CONTAINER_NAME}",
+                                    "image": "${IMAGE_URL}",
+                                    "memory": ${MEMORY},
+                                    "cpu": ${CPU},
+                                    "essential": true,
+                                    "portMappings": [
+                                        {
+                                            "containerPort": ${CONTAINER_PORT_1},
+                                            "hostPort": ${CONTAINER_PORT_1},
+                                            "protocol": "tcp"
+                                        },
+                                        {
+                                            "containerPort": ${CONTAINER_PORT_2},
+                                            "hostPort": ${CONTAINER_PORT_2},
+                                            "protocol": "tcp"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "networkMode": "awsvpc",
+                            "requiresCompatibilities": ["FARGATE"],
+                            "cpu": "${CPU}",
+                            "memory": "${MEMORY}"
+                        }
+                        EOF
+                        '''
+                        // Verify the file content
+                        sh "cat task-definition.json"
+                        // Register the task definition
+                        sh """
+                        aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
+                        """
+                    } catch (Exception e) {
+                        echo "Failed to create task definition: ${e}"
+                        throw e
+                    }
+                }
             }
-         },
-         "name": "sample-fargate-app",
-         "portMappings": [
-            {
-               "containerPort": 80,
-               "hostPort": 80,
-               "protocol": "tcp"
-            }
-         ]
-      }
-   ],
-   "cpu": "$CPU",
-   "executionRoleArn": "arn:aws:iam::012345678910:role/ecsTaskExecutionRole",
-   "family": "fargate-task-definition",
-   "memory": "$MEMORY",
-   "networkMode": "awsvpc",
-   "requiresCompatibilities": [
-       "FARGATE"
-    ]
-}
-"""
-            // Register the ECS task definition
-            sh "aws ecs register-task-definition --cli-input-json '${TASK_DEFINITION}'"
         }
-    }
-}
+
         stage('Create ECS Service') {
             steps {
                 script {
