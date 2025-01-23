@@ -51,14 +51,15 @@ pipeline {
             steps {
                 script {
                     echo "Checking if Security Group exists..."
-                    def securityGroupId = sh(
-                        script: '''
-                        aws ec2 describe-security-groups \
-                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                            --query "SecurityGroups[0].GroupId" --output text
-                        ''',
-                        returnStdout: true
-                    ).trim()
+                    def ruleExists = sh(
+                    script: """
+                    aws ec2 describe-security-groups \
+                    --group-ids ${securityGroupId} \
+                    --query 'SecurityGroups[0].IpPermissions[?FromPort==80 && ToPort==80 && IpProtocol==tcp && contains(IpRanges[].CidrIp, "0.0.0.0/0")]' \
+                    --output text
+                    """,
+                    returnStdout: true
+                ).trim()
                     echo "Security Group ID: ${securityGroupId}"
 
                     if (!securityGroupId || securityGroupId == 'None') {
