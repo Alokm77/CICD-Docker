@@ -62,7 +62,6 @@ pipeline {
             
             if (securityGroupId == "None") {
                 echo "Security Group not found. Creating a new Security Group..."
-                // Command to create a new security group
                 def newSecurityGroup = sh(
                     script: '''
                     aws ec2 create-security-group \
@@ -73,7 +72,10 @@ pipeline {
                     ''',
                     returnStdout: true
                 ).trim()
-                securityGroupId = newSecurityGroup.tokenize()[1] // Extract the GroupId from the JSON response
+                
+                // Extract GroupId from the JSON response
+                def jsonResponse = readJSON text: newSecurityGroup
+                securityGroupId = jsonResponse.GroupId
                 echo "Created new Security Group with ID: ${securityGroupId}"
             } else {
                 echo "Found existing Security Group with ID: ${securityGroupId}"
@@ -84,7 +86,7 @@ pipeline {
                 script: """
                 aws ec2 describe-security-groups \
                     --group-ids ${securityGroupId} \
-                    --query 'SecurityGroups[0].IpPermissions[?FromPort==80 && ToPort==80 && IpProtocol==tcp && contains(IpRanges[].CidrIp, "0.0.0.0/0")]' \
+                    --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
                     --output text
                 """,
                 returnStdout: true
