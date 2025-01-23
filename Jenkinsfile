@@ -166,26 +166,26 @@ pipeline {
                     echo "Creating ECS Task Definition..."
                     try {
                         // Write the task definition JSON to a file
-                        sh """
-                        cat <<EOF > task-definition.json
+                        sh '''
+                        cat <<'EOF' > task-definition.json
                         {
-                            "family": "${TASK_DEFINITION_NAME}",
+                            "family": "dev-task",
                             "containerDefinitions": [
                                 {
-                                    "name": "${CONTAINER_NAME}",
-                                    "image": "${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}",
+                                    "name": "dev-container",
+                                    "image": "905417999377.dkr.ecr.us-east-1.amazonaws.com/dev-repo:latest",
                                     "memory": 512,
                                     "cpu": 256,
                                     "essential": true,
                                     "portMappings": [
                                         {
-                                            "containerPort": ${CONTAINER_PORT_1},
-                                            "hostPort": ${CONTAINER_PORT_1},
+                                            "containerPort": 80,
+                                            "hostPort": 80,
                                             "protocol": "tcp"
                                         },
                                         {
-                                            "containerPort": ${CONTAINER_PORT_2},
-                                            "hostPort": ${CONTAINER_PORT_2},
+                                            "containerPort": 3000,
+                                            "hostPort": 3000,
                                             "protocol": "tcp"
                                         }
                                     ]
@@ -197,7 +197,7 @@ pipeline {
                             "memory": "512"
                         }
                         EOF
-                        """
+                        '''
                         // Verify the file content
                         sh "cat task-definition.json"
                         // Register the task definition
