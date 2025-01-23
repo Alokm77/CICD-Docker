@@ -47,67 +47,54 @@ pipeline {
         }
     }
 }
-
         stage('Create Security Group') {
-            steps {
-                script {
-                    echo "Checking if Security Group exists..."
-                    def securityGroupId = sh(
-                        script: '''
-                        aws ec2 describe-security-groups \
-                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                            --query "SecurityGroups[0].GroupId" --output text
-                        ''',
-                        returnStdout: true
-                    ).trim()
+    steps {
+        script {
+            echo "Checking if Security Group exists..."
+            def securityGroupId = sh(
+                script: '''
+                aws ec2 describe-security-groups \
+                    --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
+                    --query "SecurityGroups[0].GroupId" --output text
+                ''',
+                returnStdout: true
+            ).trim()
 
-                    if (securityGroupId == "None") {
-                        echo "Security Group not found. Creating a new Security Group..."
-                        def newSecurityGroup = sh(
-                            script: '''
-                            aws ec2 create-security-group \
-                                --group-name dev-sg \
-                                --description "Dev security group" \
-                                --vpc-id vpc-0bd5e05b7eb883a10 \
-                                --output json
-                            ''',
-                            returnStdout: true
-                        ).trim()
+            if (securityGroupId == "None") {
+                echo "Security Group not found. Creating a new Security Group..."
+                def newSecurityGroup = sh(
+                    script: '''
+                    aws ec2 create-security-group \
+                        --group-name dev-sg \
+                        --description "Dev security group" \
+                        --vpc-id vpc-0bd5e05b7eb883a10 \
+                        --output json
+                    ''',
+                    returnStdout: true
+                ).trim()
 
-                        // Extract GroupId from the JSON response
-                        def jsonResponse = readJSON text: newSecurityGroup
-                        securityGroupId = jsonResponse.GroupId
-                        echo "Created new Security Group with ID: ${securityGroupId}"
-                    } else {
-                        echo "Found existing Security Group with ID: ${securityGroupId}"
-                    }
+                // Extract GroupId from the JSON response
+                def jsonResponse = readJSON text: newSecurityGroup
+                securityGroupId = jsonResponse.GroupId
+                echo "Created new Security Group with ID: ${securityGroupId}"
+            } else {
+                echo "Found existing Security Group with ID: ${securityGroupId}"
+            }
 
-                    echo "Checking for existing ingress rule..."
-                    def ruleExists = sh(
-                        script: """
-                        aws ec2 describe-security-groups \
-                            --group-ids ${securityGroupId} \
-                            --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
-                            --output text
-                        """,
-                        returnStdout: true
-                    ).trim()
-
-                    if (ruleExists == "") {
-                        echo "Ingress rule for port 80 doesn't exist. Adding it now."
-                        sh """
-                        aws ec2 authorize-security-group-ingress \
-                            --group-id ${securityGroupId} \
-                            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                        """
-                        echo "Ingress rule added successfully."
-                    } else {
-                        echo "Ingress rule for port 80 already exists. Skipping rule creation."
-                    }
-                }
+            echo "Checking for existing ingress rule..."
+            try {
+                sh """
+                aws ec2 authorize-security-group-ingress \
+                    --group-id ${securityGroupId} \
+                    --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                """
+                echo "Ingress rule added successfully."
+            } catch (Exception e) {
+                echo "Ingress rule for port 80 already exists, skipping rule creation."
             }
         }
-
+    }
+}
         stage('Create Application Load Balancer') {
             steps {
                 script {
