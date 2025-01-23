@@ -165,8 +165,9 @@ pipeline {
                 script {
                     echo "Creating ECS Task Definition..."
                     try {
+                        // Write the task definition JSON to a file
                         sh """
-                        cat > task-definition.json <<EOF
+                        cat <<EOF > task-definition.json
                         {
                             "family": "${TASK_DEFINITION_NAME}",
                             "containerDefinitions": [
@@ -197,6 +198,8 @@ pipeline {
                         }
                         EOF
                         """
+                        // Verify the file content
+                        sh "cat task-definition.json"
                         // Register the task definition
                         sh """
                         aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
