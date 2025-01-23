@@ -82,19 +82,25 @@ pipeline {
         }
     }
 }
-        stage('Create Application Load Balancer') {
+       stage('Create Application Load Balancer') {
     steps {
         script {
-            echo 'Creating an Application Load Balancer...'
-            def albArn = sh(
-                script: """
-                aws elbv2 create-load-balancer --name ${ALB_NAME} --subnets ${SUBNET_IDS} --security-groups ${env.SECURITY_GROUP} --type application --scheme internet-facing --region ${AWS_REGION} --query 'LoadBalancers[0].LoadBalancerArn' --output text
-                """,
+            echo "Creating an Application Load Balancer..."
+            if (!env.SECURITY_GROUP_ID) {
+                error "SECURITY_GROUP_ID is not set. Ensure the Security Group is created successfully in the previous stage."
+            }
+            def loadBalancerArn = sh(
+                script: '''
+                aws elbv2 create-load-balancer --name dev-alb \
+                    --subnets subnet-01c1111d3cee3fb0d subnet-04030489d75ed52ec \
+                    --security-groups ${SECURITY_GROUP_ID} \
+                    --type application --scheme internet-facing \
+                    --region us-east-1 \
+                    --query LoadBalancers[0].LoadBalancerArn --output text
+                ''',
                 returnStdout: true
             ).trim()
-            
-            echo "Application Load Balancer Created: ${albArn}"
-            env.ALB_ARN = albArn
+            echo "Application Load Balancer created with ARN: ${loadBalancerArn}"
         }
     }
 }
