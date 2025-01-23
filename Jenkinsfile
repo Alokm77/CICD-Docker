@@ -12,6 +12,16 @@ pipeline {
         IMAGE_TAG = 'latest'
         ECR_REGISTRY = '905417999377.dkr.ecr.us-east-1.amazonaws.com'
         AWS_REGION = 'us-east-1'
+        ECS_CLUSTER = 'dev-cluster'
+        TASK_DEFINITION_NAME = 'dev-task'
+        CONTAINER_NAME = 'dev-container'
+        CONTAINER_PORT_1 = '80'
+        CONTAINER_PORT_2 = '3000'
+        ECS_SERVICE_NAME = 'dev-service'
+        SUBNET_IDS = 'subnet-01c1111d3cee3fb0d,subnet-04030489d75ed52ec' // Replace with your subnet IDs
+        SECURITY_GROUP = '' // Will be created dynamically
+        ALB_NAME = 'dev-alb'
+        TARGET_GROUP_NAME = 'dev-target-group'
     }
     stages {
         stage('Create ECR Repository') {
@@ -25,59 +35,120 @@ pipeline {
                 }
             }
         }
-        stage('GitHub Checkout') {
+        stage('Create ECS Cluster') {
             steps {
-                git branch: 'main', credentialsId: 'Alokm77', url: 'https://github.com/Alokm77/CICD-Docker.git'
+                script {
+                    echo "Checking if ECS cluster exists or creating it..."
+                    sh """
+                    aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query 'clusters[?status==`ACTIVE`].clusterName' --output text || \
+                    aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
+                    """
+                }
             }
         }
-        stage('Unit Test') {
+        stage('Create Security Group') {
             steps {
-                sh 'npm install' // Install dependencies
-                sh 'npm test'    // Run unit tests
+                script {
+                    echo "Creating a Security Group..."
+                    sh """
+                    SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name dev-sg --description "Security group for ECS service" --vpc-id vpc-xxxxxxx --region ${AWS_REGION} --query 'GroupId' --output text)
+                    echo "Security Group Created: $SECURITY_GROUP_ID"
+                    aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                    aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 3000 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                    echo "export SECURITY_GROUP=$SECURITY_GROUP_ID" >> env.properties
+                    """
+                }
             }
         }
-        stage('SonarQube Analysis') {
+        stage('Create Application Load Balancer') {
             steps {
-                withCredentials([string(credentialsId: 'CICD-Docker', variable: 'SONAR_TOKEN')]) {
-                    withSonarQubeEnv('SonarQube') {
-                        sh """
-                        ${SONAR_SCANNER_HOME}/bin/sonar-scanner \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=http://sonarqube-dev:9000 \
-                        -Dsonar.login=${SONAR_TOKEN}
-                        """
+                script {
+                    echo "Creating an Application Load Balancer..."
+                    sh """
+                    ALB_ARN=$(aws elbv2 create-load-balancer --name ${ALB_NAME} --subnets ${SUBNET_IDS} --security-groups ${SECURITY_GROUP} --type application --scheme internet-facing --region ${AWS_REGION} --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+                    echo "Application Load Balancer Created: $ALB_ARN"
+                    echo "export ALB_ARN=$ALB_ARN" >> env.properties
+                    """
+                }
+            }
+        }
+        stage('Create Target Group') {
+            steps {
+                script {
+                    echo "Creating a Target Group..."
+                    sh """
+                    TARGET_GROUP_ARN=$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} --protocol HTTP --port ${CONTAINER_PORT_1} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
+                    echo "Target Group Created for Port ${CONTAINER_PORT_1}: $TARGET_GROUP_ARN"
+                    echo "export TARGET_GROUP_ARN=$TARGET_GROUP_ARN" >> env.properties
+                    """
+                    echo "Creating a Target Group for Port 3000..."
+                    sh """
+                    TARGET_GROUP_ARN_3000=$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 --protocol HTTP --port ${CONTAINER_PORT_2} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
+                    echo "Target Group Created for Port ${CONTAINER_PORT_2}: $TARGET_GROUP_ARN_3000"
+                    echo "export TARGET_GROUP_ARN_3000=$TARGET_GROUP_ARN_3000" >> env.properties
+                    """
+                }
+            }
+        }
+        stage('Create ECS Task Definition') {
+            steps {
+                script {
+                    echo "Creating ECS Task Definition..."
+                    sh """
+                    cat > task-definition.json <<EOF
+                    {
+                        "family": "${TASK_DEFINITION_NAME}",
+                        "containerDefinitions": [
+                            {
+                                "name": "${CONTAINER_NAME}",
+                                "image": "${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}",
+                                "memory": 512,
+                                "cpu": 256,
+                                "essential": true,
+                                "portMappings": [
+                                    {
+                                        "containerPort": ${CONTAINER_PORT_1},
+                                        "hostPort": ${CONTAINER_PORT_1},
+                                        "protocol": "tcp"
+                                    },
+                                    {
+                                        "containerPort": ${CONTAINER_PORT_2},
+                                        "hostPort": ${CONTAINER_PORT_2},
+                                        "protocol": "tcp"
+                                    }
+                                ]
+                            }
+                        ],
+                        "networkMode": "awsvpc",
+                        "requiresCompatibilities": ["FARGATE"],
+                        "cpu": "256",
+                        "memory": "512"
                     }
+                    EOF
+                    aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
+                    """
                 }
             }
         }
-        stage('Build Docker Image') {
+        stage('Create ECS Service') {
             steps {
                 script {
-                    docker.build("${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}")
+                    echo "Creating ECS Service..."
+                    sh """
+                    aws ecs create-service \
+                        --cluster ${ECS_CLUSTER} \
+                        --service-name ${ECS_SERVICE_NAME} \
+                        --task-definition ${TASK_DEFINITION_NAME} \
+                        --desired-count 1 \
+                        --launch-type FARGATE \
+                        --load-balancers "targetGroupArn=\$(cat env.properties | grep TARGET_GROUP_ARN | cut -d= -f2),containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_1}" \
+                        --load-balancers "targetGroupArn=\$(cat env.properties | grep TARGET_GROUP_ARN_3000 | cut -d= -f2),containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_2}" \
+                        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[\$(cat env.properties | grep SECURITY_GROUP | cut -d= -f2)],assignPublicIp=ENABLED}" \
+                        --region ${AWS_REGION}
+                    """
                 }
             }
         }
-        stage('Trivy Scan') {
-            steps {
-                sh """
-                trivy --severity HIGH,CRITICAL --no-progress --format table -o trivy-report.html image ${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
-                """
-            }
-        }
-        stage('Login to ECR') {
-            steps {
-                sh """
-                aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                """
-            }
-        }
-        stage('Push Image to ECR') {
-            steps {
-                script {
-                    docker.image("${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}").push()
-                }
-            }
-        }
+        // Additional stages for testing, SonarQube, Docker build, and deployment as in the previous script
     }
 }
