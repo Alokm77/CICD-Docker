@@ -21,6 +21,7 @@ pipeline {
         SUBNET_IDS = 'subnet-01c1111d3cee3fb0d,subnet-04030489d75ed52ec' // Replace with your subnet IDs
         ALB_NAME = 'dev-alb'
         TARGET_GROUP_NAME = 'dev-target-group'
+        VPC_ID = 'vpc-0bd5e05b7eb883a10'  // Replace with your actual VPC ID
     }
     stages {
         stage('Create ECR Repository') {
@@ -48,87 +49,88 @@ pipeline {
         }
 
         stage('Create Security Group') {
-    steps {
-        script {
-            echo "Checking if Security Group exists..."
-            def securityGroupId = sh(
-                script: '''
-                aws ec2 describe-security-groups \
-                    --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                    --query "SecurityGroups[0].GroupId" --output text
-                ''',
-                returnStdout: true
-            ).trim()
-            
-            if (securityGroupId == "None") {
-                echo "Security Group not found. Creating a new Security Group..."
-                def newSecurityGroup = sh(
-                    script: '''
-                    aws ec2 create-security-group \
-                        --group-name dev-sg \
-                        --description "Dev security group" \
-                        --vpc-id vpc-0bd5e05b7eb883a10 \
-                        --output json
-                    ''',
-                    returnStdout: true
-                ).trim()
-                
-                // Extract GroupId from the JSON response
-                def jsonResponse = readJSON text: newSecurityGroup
-                securityGroupId = jsonResponse.GroupId
-                echo "Created new Security Group with ID: ${securityGroupId}"
-            } else {
-                echo "Found existing Security Group with ID: ${securityGroupId}"
+            steps {
+                script {
+                    echo "Checking if Security Group exists..."
+                    def securityGroupId = sh(
+                        script: '''
+                        aws ec2 describe-security-groups \
+                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=${VPC_ID} \
+                            --query "SecurityGroups[0].GroupId" --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (securityGroupId == "None") {
+                        echo "Security Group not found. Creating a new Security Group..."
+                        def newSecurityGroup = sh(
+                            script: '''
+                            aws ec2 create-security-group \
+                                --group-name dev-sg \
+                                --description "Dev security group" \
+                                --vpc-id ${VPC_ID} \
+                                --output json
+                            ''',
+                            returnStdout: true
+                        ).trim()
+                        
+                        // Extract GroupId from the JSON response
+                        def jsonResponse = readJSON text: newSecurityGroup
+                        securityGroupId = jsonResponse.GroupId
+                        echo "Created new Security Group with ID: ${securityGroupId}"
+                    } else {
+                        echo "Found existing Security Group with ID: ${securityGroupId}"
+                    }
+
+                    echo "Checking for existing ingress rule..."
+                    def ruleExists = sh(
+                        script: """
+                        aws ec2 describe-security-groups \
+                            --group-ids ${securityGroupId} \
+                            --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
+                            --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (ruleExists) {
+                        echo "Ingress rule for port 80 already exists. Skipping rule creation."
+                    } else {
+                        echo "Authorizing ingress rules for Security Group..."
+                        sh """
+                        aws ec2 authorize-security-group-ingress \
+                            --group-id ${securityGroupId} \
+                            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                        """
+                        echo "Ingress rule added successfully."
+                    }
+
+                    // Export the Security Group ID for subsequent stages
+                    env.SECURITY_GROUP_ID = securityGroupId
+                }
             }
-
-            echo "Checking for existing ingress rule..."
-            def ruleExists = sh(
-                script: """
-                aws ec2 describe-security-groups \
-                    --group-ids ${securityGroupId} \
-                    --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
-                    --output text
-                """,
-                returnStdout: true
-            ).trim()
-
-            if (ruleExists) {
-                echo "Ingress rule for port 80 already exists. Skipping rule creation."
-            } else {
-                echo "Authorizing ingress rules for Security Group..."
-                sh """
-                aws ec2 authorize-security-group-ingress \
-                    --group-id ${securityGroupId} \
-                    --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
-                """
-                echo "Ingress rule added successfully."
-            }
-
-            // Export the Security Group ID for subsequent stages
-            env.SECURITY_GROUP_ID = securityGroupId
         }
-    }
-}
+
         stage('Create Application Load Balancer') {
-    steps {
-        script {
-            echo "Creating an Application Load Balancer..."
-            sh """
-            aws elbv2 create-load-balancer \
-                --name dev-alb \
-                --subnets subnet-01c1111d3cee3fb0d \
-                --subnets subnet-04030489d75ed52ec \
-                --security-groups ${env.SECURITY_GROUP_ID} \
-                --type application \
-                --scheme internet-facing \
-                --region us-east-1 \
-                --query LoadBalancers[0].LoadBalancerArn \
-                --output text
-            """
+            steps {
+                script {
+                    echo "Creating an Application Load Balancer..."
+                    sh """
+                    aws elbv2 create-load-balancer \
+                        --name ${ALB_NAME} \
+                        --subnets ${SUBNET_IDS} \
+                        --security-groups ${env.SECURITY_GROUP_ID} \
+                        --type application \
+                        --scheme internet-facing \
+                        --region ${AWS_REGION} \
+                        --query LoadBalancers[0].LoadBalancerArn \
+                        --output text
+                    """
+                }
+            }
         }
-    }
-}
-        stage('Create Target Group') 
+
+        stage('Create Target Group') {
             steps {
                 script {
                     echo "Creating Target Group for Port ${CONTAINER_PORT_1}..."
@@ -136,7 +138,7 @@ pipeline {
                         script: """
                         aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} \
                             --protocol HTTP --port ${CONTAINER_PORT_1} \
-                            --vpc-id vpc-xxxxxxx --target-type ip \
+                            --vpc-id ${VPC_ID} --target-type ip \
                             --region ${AWS_REGION} \
                             --query 'TargetGroups[0].TargetGroupArn' --output text
                         """,
@@ -151,7 +153,7 @@ pipeline {
                         script: """
                         aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 \
                             --protocol HTTP --port ${CONTAINER_PORT_2} \
-                            --vpc-id vpc-xxxxxxx --target-type ip \
+                            --vpc-id ${VPC_ID} --target-type ip \
                             --region ${AWS_REGION} \
                             --query 'TargetGroups[0].TargetGroupArn' --output text
                         """,
@@ -225,3 +227,4 @@ pipeline {
             }
         }
     }
+}
