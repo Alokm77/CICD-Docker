@@ -85,6 +85,9 @@ pipeline {
                 echo "Found existing Security Group with ID: ${securityGroupId}"
             }
 
+            // Store the security group ID in the environment
+            env.SECURITY_GROUP_ID = securityGroupId
+
             echo "Checking for existing ingress rule..."
             try {
                 sh """
@@ -100,24 +103,23 @@ pipeline {
     }
 }
         stage('Create Application Load Balancer') {
-            steps {
-                script {
-                    echo "Creating an Application Load Balancer..."
-                    sh """
-                    aws elbv2 create-load-balancer \
-                        --name ${ALB_NAME} \
-                        --subnets ${SUBNET_IDS} \
-                        --security-groups ${SECURITY_GROUP_ID} \
-                        --type application \
-                        --scheme internet-facing \
-                        --region ${AWS_REGION} \
-                        --query LoadBalancers[0].LoadBalancerArn \
-                        --output text
-                    """
-                }
-            }
+    steps {
+        script {
+            echo "Creating an Application Load Balancer..."
+            sh """
+            aws elbv2 create-load-balancer \
+                --name ${ALB_NAME} \
+                --subnets ${SUBNET_IDS} \
+                --security-groups ${SECURITY_GROUP_ID} \
+                --type application \
+                --scheme internet-facing \
+                --region ${AWS_REGION} \
+                --query LoadBalancers[0].LoadBalancerArn \
+                --output text
+            """
         }
-
+    }
+}
         stage('Create Target Group') {
             steps {
                 script {
