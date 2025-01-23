@@ -70,17 +70,21 @@ pipeline {
     }
 }
         stage('Create Application Load Balancer') {
-            steps {
-                script {
-                    echo "Creating an Application Load Balancer..."
-                   sh """
-                   ALB_ARN=\$(aws elbv2 create-load-balancer --name ${ALB_NAME} --subnets ${SUBNET_IDS} --security-groups ${SECURITY_GROUP} --type application --scheme internet-facing --region ${AWS_REGION} --query 'LoadBalancers[0].LoadBalancerArn' --output text)
-                   echo "Application Load Balancer Created: \$ALB_ARN"
-                   echo "export ALB_ARN=\$ALB_ARN" >> env.properties
-                   """
-                }
-            }
+    steps {
+        script {
+            echo 'Creating an Application Load Balancer...'
+            def albArn = sh(
+                script: """
+                aws elbv2 create-load-balancer --name ${ALB_NAME} --subnets ${SUBNET_IDS} --security-groups ${env.SECURITY_GROUP} --type application --scheme internet-facing --region ${AWS_REGION} --query 'LoadBalancers[0].LoadBalancerArn' --output text
+                """,
+                returnStdout: true
+            ).trim()
+            
+            echo "Application Load Balancer Created: ${albArn}"
+            env.ALB_ARN = albArn
         }
+    }
+}
         stage('Create Target Group') {
             steps {
                 script {
