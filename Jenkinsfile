@@ -10,7 +10,7 @@ pipeline {
 		JOB_NAME_NOW = 'cicd01'
 		ECR_REPO = 'dev-repo'
 		IMAGE_TAG = 'latest'
-		ECS_REGISTRY = '905417999377.dkr.ecr.us-east-1.amazonaws.com'	
+		ECR_REGISTRY = '905417999377.dkr.ecr.us-east-1.amazonaws.com'	
 	}
 	stages {
 		stage('GitHub'){
