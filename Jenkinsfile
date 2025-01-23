@@ -47,7 +47,7 @@ pipeline {
         }
     }
 }
-        stage('Create Security Group') {
+       stage('Create Security Group') {
     steps {
         script {
             echo "Checking if Security Group exists..."
@@ -73,9 +73,13 @@ pipeline {
                     returnStdout: true
                 ).trim()
 
-                // Extract GroupId from the JSON response
-                def jsonResponse = readJSON text: newSecurityGroup
-                securityGroupId = jsonResponse.GroupId
+                // Use jq to parse the JSON output
+                securityGroupId = sh(
+                    script: """
+                    echo '${newSecurityGroup}' | jq -r '.GroupId'
+                    """,
+                    returnStdout: true
+                ).trim()
                 echo "Created new Security Group with ID: ${securityGroupId}"
             } else {
                 echo "Found existing Security Group with ID: ${securityGroupId}"
