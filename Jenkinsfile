@@ -19,7 +19,6 @@ pipeline {
         CONTAINER_PORT_2 = '3000'
         ECS_SERVICE_NAME = 'dev-service'
         SUBNET_IDS = 'subnet-01c1111d3cee3fb0d,subnet-04030489d75ed52ec' // Replace with your subnet IDs
-        SECURITY_GROUP = '' // Will be created dynamically
         ALB_NAME = 'dev-alb'
         TARGET_GROUP_NAME = 'dev-target-group'
     }
@@ -35,6 +34,7 @@ pipeline {
                 }
             }
         }
+
         stage('Create ECS Cluster') {
             steps {
                 script {
@@ -46,88 +46,126 @@ pipeline {
                 }
             }
         }
-       stage('Create Security Group') {
-    steps {
-        script {
-            echo "Checking if Security Group exists..."
-            def securityGroupId = sh(
-                script: '''
-                aws ec2 describe-security-groups \
-                    --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                    --query "SecurityGroups[0].GroupId" --output text
-                ''',
-                returnStdout: true
-            ).trim()
-            echo "Security Group ID: ${securityGroupId}"
 
-            echo "Checking for existing ingress rule..."
-            def ruleExists = sh(
-                script: """
-                aws ec2 describe-security-groups \
-                    --group-ids ${securityGroupId} \
-                    --query 'SecurityGroups[0].IpPermissions[?FromPort==`80` && ToPort==`80` && IpProtocol==`tcp` && contains(IpRanges[].CidrIp, `0.0.0.0/0`)]' \
-                    --output text
-                """,
-                returnStdout: true
-            ).trim()
-
-            if (ruleExists) {
-                echo "Ingress rule for port 80 already exists. Skipping rule creation."
-            } else {
-                echo "Authorizing ingress rules for Security Group..."
-                sh """
-                aws ec2 authorize-security-group-ingress \
-                    --group-id ${securityGroupId} \
-                    --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
-                """
-                echo "Ingress rule added successfully."
-            }
-
-            // Export the Security Group ID for subsequent stages
-            env.SECURITY_GROUP_ID = securityGroupId
-        }
-    }
-}
-       stage('Create Application Load Balancer') {
-    steps {
-        script {
-            echo "Creating an Application Load Balancer..."
-            if (!env.SECURITY_GROUP_ID) {
-                error "SECURITY_GROUP_ID is not set. Ensure the Security Group is created successfully in the previous stage."
-            }
-            def loadBalancerArn = sh(
-                script: '''
-                aws elbv2 create-load-balancer --name dev-alb \
-                    --subnets subnet-01c1111d3cee3fb0d subnet-04030489d75ed52ec \
-                    --security-groups ${SECURITY_GROUP_ID} \
-                    --type application --scheme internet-facing \
-                    --region us-east-1 \
-                    --query LoadBalancers[0].LoadBalancerArn --output text
-                ''',
-                returnStdout: true
-            ).trim()
-            echo "Application Load Balancer created with ARN: ${loadBalancerArn}"
-        }
-    }
-}
-        stage('Create Target Group') {
+        stage('Create Security Group') {
             steps {
                 script {
-                    echo "Creating a Target Group..."
-                    sh """
-                    TARGET_GROUP_ARN=\$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} --protocol HTTP --port ${CONTAINER_PORT_1} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
-                    echo "Target Group Created for Port ${CONTAINER_PORT_1}: \$TARGET_GROUP_ARN"
-                    echo "export TARGET_GROUP_ARN=\$TARGET_GROUP_ARN" >> env.properties
-                    """
-                    echo "Creating a Target Group for Port 3000..."
-                    sh """
-                    TARGET_GROUP_ARN_3000=\$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 --protocol HTTP --port ${CONTAINER_PORT_2} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
-                    echo "Target Group Created for Port ${CONTAINER_PORT_2}: \$TARGET_GROUP_ARN_3000"
-                    echo "export TARGET_GROUP_ARN_3000=\$TARGET_GROUP_ARN_3000" >> env.properties
-                    """
+                    echo "Checking if Security Group exists..."
+                    def securityGroupId = sh(
+                        script: '''
+                        aws ec2 describe-security-groups \
+                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
+                            --query "SecurityGroups[0].GroupId" --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                    echo "Security Group ID: ${securityGroupId}"
+
+                    if (!securityGroupId || securityGroupId == 'None') {
+                        echo "Creating Security Group..."
+                        securityGroupId = sh(
+                            script: '''
+                            aws ec2 create-security-group \
+                                --group-name dev-sg \
+                                --description "Security group for dev" \
+                                --vpc-id vpc-0bd5e05b7eb883a10 \
+                                --output text
+                            ''',
+                            returnStdout: true
+                        ).trim()
+                        echo "Created Security Group ID: ${securityGroupId}"
+                    }
+
+                    // Authorizing ingress rules if not present
+                    echo "Checking for existing ingress rule for port 80..."
+                    def ruleExists = sh(
+                        script: """
+                        aws ec2 describe-security-groups \
+                            --group-ids ${securityGroupId} \
+                            --query 'SecurityGroups[0].IpPermissions[?FromPort==\`80\` && ToPort==\`80\` && IpProtocol==\`tcp\` && contains(IpRanges[].CidrIp, \`0.0.0.0/0\`)]' \
+                            --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (ruleExists) {
+                        echo "Ingress rule for port 80 already exists. Skipping rule creation."
+                    } else {
+                        echo "Authorizing ingress rules for Security Group..."
+                        sh """
+                        aws ec2 authorize-security-group-ingress \
+                            --group-id ${securityGroupId} \
+                            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
+                        """
+                    }
+
+                    env.SECURITY_GROUP_ID = securityGroupId
                 }
             }
         }
+
+        stage('Create Application Load Balancer') {
+            steps {
+                script {
+                    echo "Creating an Application Load Balancer..."
+                    if (!env.SECURITY_GROUP_ID) {
+                        error "SECURITY_GROUP_ID is not set. Ensure the Security Group is created successfully in the previous stage."
+                    }
+
+                    def loadBalancerArn = sh(
+                        script: """
+                        aws elbv2 create-load-balancer --name ${ALB_NAME} \
+                            --subnets ${SUBNET_IDS} \
+                            --security-groups ${SECURITY_GROUP_ID} \
+                            --type application --scheme internet-facing \
+                            --region ${AWS_REGION} \
+                            --query LoadBalancers[0].LoadBalancerArn --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Application Load Balancer created with ARN: ${loadBalancerArn}"
+                    env.LOAD_BALANCER_ARN = loadBalancerArn
+                }
+            }
+        }
+
+        stage('Create Target Group') {
+            steps {
+                script {
+                    echo "Creating Target Group for Port ${CONTAINER_PORT_1}..."
+                    def targetGroupArn = sh(
+                        script: """
+                        aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} \
+                            --protocol HTTP --port ${CONTAINER_PORT_1} \
+                            --vpc-id vpc-xxxxxxx --target-type ip \
+                            --region ${AWS_REGION} \
+                            --query 'TargetGroups[0].TargetGroupArn' --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Target Group Created for Port ${CONTAINER_PORT_1}: ${targetGroupArn}"
+                    env.TARGET_GROUP_ARN = targetGroupArn
+
+                    echo "Creating Target Group for Port ${CONTAINER_PORT_2}..."
+                    def targetGroupArn3000 = sh(
+                        script: """
+                        aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 \
+                            --protocol HTTP --port ${CONTAINER_PORT_2} \
+                            --vpc-id vpc-xxxxxxx --target-type ip \
+                            --region ${AWS_REGION} \
+                            --query 'TargetGroups[0].TargetGroupArn' --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Target Group Created for Port ${CONTAINER_PORT_2}: ${targetGroupArn3000}"
+                    env.TARGET_GROUP_ARN_3000 = targetGroupArn3000
+                }
+            }
+        }
+
         stage('Create ECS Task Definition') {
             steps {
                 script {
@@ -168,6 +206,7 @@ pipeline {
                 }
             }
         }
+
         stage('Create ECS Service') {
             steps {
                 script {
@@ -179,14 +218,13 @@ pipeline {
                         --task-definition ${TASK_DEFINITION_NAME} \
                         --desired-count 1 \
                         --launch-type FARGATE \
-                        --load-balancers "targetGroupArn=\$(cat env.properties | grep TARGET_GROUP_ARN | cut -d= -f2),containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_1}" \
-                        --load-balancers "targetGroupArn=\$(cat env.properties | grep TARGET_GROUP_ARN_3000 | cut -d= -f2),containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_2}" \
-                        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[\$(cat env.properties | grep SECURITY_GROUP | cut -d= -f2)],assignPublicIp=ENABLED}" \
+                        --load-balancers "targetGroupArn=${TARGET_GROUP_ARN},containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_1}" \
+                        --load-balancers "targetGroupArn=${TARGET_GROUP_ARN_3000},containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT_2}" \
+                        --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[${SECURITY_GROUP_ID}],assignPublicIp=ENABLED}" \
                         --region ${AWS_REGION}
                     """
                 }
             }
         }
-        // Additional stages for testing, SonarQube, Docker build, and deployment as in the previous script
     }
 }
