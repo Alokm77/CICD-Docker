@@ -35,6 +35,7 @@ pipeline {
                 }
             }
         }
+    }
 
         stage('Create ECS Cluster') {
             steps {
@@ -105,6 +106,7 @@ pipeline {
     } else {
         echo "Ingress rule for port 80 already exists. Skipping rule creation."
     }
+}
 }
         stage('Create Application Load Balancer') {
             steps {
@@ -222,4 +224,5 @@ pipeline {
             }
         }
     }
+}
 }
