@@ -49,23 +49,36 @@ pipeline {
         stage('Create Security Group') {
     steps {
         script {
-            echo 'Creating a Security Group...'
+            echo "Checking if Security Group exists..."
             def securityGroupId = sh(
-                script: """
-                SECURITY_GROUP_ID=\$(aws ec2 create-security-group --group-name dev-sg --description 'Security group for ECS service' --vpc-id vpc-0bd5e05b7eb883a10 --region ${AWS_REGION} --query 'GroupId' --output text)
-                echo \$SECURITY_GROUP_ID
-                """,
+                script: '''
+                aws ec2 describe-security-groups --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 --query "SecurityGroups[0].GroupId" --output text || echo "None"
+                ''',
                 returnStdout: true
             ).trim()
             
-            echo "Security Group Created: ${securityGroupId}"
-            env.SECURITY_GROUP = securityGroupId
-            
+            if (securityGroupId == "None") {
+                echo "Security Group not found. Creating a new one..."
+                securityGroupId = sh(
+                    script: '''
+                    aws ec2 create-security-group --group-name dev-sg --description "Security group for ECS service" --vpc-id vpc-0bd5e05b7eb883a10 --query GroupId --output text
+                    ''',
+                    returnStdout: true
+                ).trim()
+                echo "Created Security Group with ID: ${securityGroupId}"
+            } else {
+                echo "Security Group already exists with ID: ${securityGroupId}"
+            }
+
+            // Export the security group ID for later use
+            env.SECURITY_GROUP_ID = securityGroupId
+            echo "Security Group ID: ${env.SECURITY_GROUP_ID}"
+
             // Authorize ingress rules
-            sh """
-            aws ec2 authorize-security-group-ingress --group-id ${env.SECURITY_GROUP} --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-            aws ec2 authorize-security-group-ingress --group-id ${env.SECURITY_GROUP} --protocol tcp --port 3000 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-            """
+            echo "Authorizing ingress rules for Security Group..."
+            sh '''
+            aws ec2 authorize-security-group-ingress --group-id ${SECURITY_GROUP_ID} --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
+            '''
         }
     }
 }
