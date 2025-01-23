@@ -70,7 +70,6 @@ pipeline {
                    echo "Application Load Balancer Created: \$ALB_ARN"
                    echo "export ALB_ARN=\$ALB_ARN" >> env.properties
                    """
-
                 }
             }
         }
@@ -79,15 +78,15 @@ pipeline {
                 script {
                     echo "Creating a Target Group..."
                     sh """
-                    TARGET_GROUP_ARN=$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} --protocol HTTP --port ${CONTAINER_PORT_1} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
-                    echo "Target Group Created for Port ${CONTAINER_PORT_1}: $TARGET_GROUP_ARN"
-                    echo "export TARGET_GROUP_ARN=$TARGET_GROUP_ARN" >> env.properties
+                    TARGET_GROUP_ARN=\$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME} --protocol HTTP --port ${CONTAINER_PORT_1} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
+                    echo "Target Group Created for Port ${CONTAINER_PORT_1}: \$TARGET_GROUP_ARN"
+                    echo "export TARGET_GROUP_ARN=\$TARGET_GROUP_ARN" >> env.properties
                     """
                     echo "Creating a Target Group for Port 3000..."
                     sh """
-                    TARGET_GROUP_ARN_3000=$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 --protocol HTTP --port ${CONTAINER_PORT_2} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
-                    echo "Target Group Created for Port ${CONTAINER_PORT_2}: $TARGET_GROUP_ARN_3000"
-                    echo "export TARGET_GROUP_ARN_3000=$TARGET_GROUP_ARN_3000" >> env.properties
+                    TARGET_GROUP_ARN_3000=\$(aws elbv2 create-target-group --name ${TARGET_GROUP_NAME}-3000 --protocol HTTP --port ${CONTAINER_PORT_2} --vpc-id vpc-xxxxxxx --target-type ip --region ${AWS_REGION} --query 'TargetGroups[0].TargetGroupArn' --output text)
+                    echo "Target Group Created for Port ${CONTAINER_PORT_2}: \$TARGET_GROUP_ARN_3000"
+                    echo "export TARGET_GROUP_ARN_3000=\$TARGET_GROUP_ARN_3000" >> env.properties
                     """
                 }
             }
