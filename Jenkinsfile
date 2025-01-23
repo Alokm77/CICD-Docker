@@ -46,7 +46,7 @@ pipeline {
                 }
             }
         }
-        stage('Create Security Group') {
+       stage('Create Security Group') {
     steps {
         script {
             echo "Checking if Security Group exists..."
@@ -54,7 +54,7 @@ pipeline {
                 script: '''
                 aws ec2 describe-security-groups \
                     --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                    --query SecurityGroups[0].GroupId --output text
+                    --query "SecurityGroups[0].GroupId" --output text
                 ''',
                 returnStdout: true
             ).trim()
@@ -62,12 +62,12 @@ pipeline {
 
             echo "Checking for existing ingress rule..."
             def ruleExists = sh(
-                script: '''
+                script: """
                 aws ec2 describe-security-groups \
                     --group-ids ${securityGroupId} \
-                    --query "SecurityGroups[0].IpPermissions[?FromPort==`80` && ToPort==`80` && IpProtocol==`tcp` && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
+                    --query "SecurityGroups[0].IpPermissions[?FromPort==\`80\` && ToPort==\`80\` && IpProtocol==\`tcp\` && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
                     --output text
-                ''',
+                """,
                 returnStdout: true
             ).trim()
 
@@ -75,11 +75,11 @@ pipeline {
                 echo "Ingress rule for port 80 already exists. Skipping rule creation."
             } else {
                 echo "Authorizing ingress rules for Security Group..."
-                sh '''
+                sh """
                 aws ec2 authorize-security-group-ingress \
                     --group-id ${securityGroupId} \
                     --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
-                '''
+                """
                 echo "Ingress rule added successfully."
             }
 
