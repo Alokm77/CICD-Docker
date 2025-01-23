@@ -65,7 +65,7 @@ pipeline {
                 script: """
                 aws ec2 describe-security-groups \
                     --group-ids ${securityGroupId} \
-                    --query "SecurityGroups[0].IpPermissions[?FromPort==\`80\` && ToPort==\`80\` && IpProtocol==\`tcp\` && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
+                    --query 'SecurityGroups[0].IpPermissions[?FromPort==`80` && ToPort==`80` && IpProtocol==`tcp` && contains(IpRanges[].CidrIp, `0.0.0.0/0`)]' \
                     --output text
                 """,
                 returnStdout: true
