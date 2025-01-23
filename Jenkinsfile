@@ -167,7 +167,7 @@ pipeline {
             try {
                 // Write the task definition JSON to a file
                 sh '''
-                cat <<EOF > task-definition.json
+                cat > task-definition.json <<'EOF'
                 {
                     "family": "dev-task",
                     "containerDefinitions": [
@@ -200,8 +200,7 @@ pipeline {
                 '''
                 // Verify the file content
                 sh "cat task-definition.json"
-                
-                // Register the task definition with the correct AWS region
+                // Register the task definition
                 sh """
                 aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
                 """
