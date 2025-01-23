@@ -37,89 +37,93 @@ pipeline {
         }
 
         stage('Create ECS Cluster') {
-    steps {
-        script {
-            echo "Checking if ECS cluster exists or creating it..."
-            sh """
-            aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query "clusters[?status=='ACTIVE'].clusterName" --output text || \
-            aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
-            """
-        }
-    }
-}
-       stage('Create Security Group') {
-    steps {
-        script {
-            echo "Checking if Security Group exists..."
-            def securityGroupId = sh(
-                script: '''
-                aws ec2 describe-security-groups \
-                    --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
-                    --query "SecurityGroups[0].GroupId" --output text
-                ''',
-                returnStdout: true
-            ).trim()
-
-            if (securityGroupId == "None") {
-                echo "Security Group not found. Creating a new Security Group..."
-                def newSecurityGroup = sh(
-                    script: '''
-                    aws ec2 create-security-group \
-                        --group-name dev-sg \
-                        --description "Dev security group" \
-                        --vpc-id vpc-0bd5e05b7eb883a10 \
-                        --output json
-                    ''',
-                    returnStdout: true
-                ).trim()
-
-                // Use jq to parse the JSON output
-                securityGroupId = sh(
-                    script: """
-                    echo '${newSecurityGroup}' | jq -r '.GroupId'
-                    """,
-                    returnStdout: true
-                ).trim()
-                echo "Created new Security Group with ID: ${securityGroupId}"
-            } else {
-                echo "Found existing Security Group with ID: ${securityGroupId}"
-            }
-
-            // Store the security group ID in the environment
-            env.SECURITY_GROUP_ID = securityGroupId
-
-            echo "Checking for existing ingress rule..."
-            try {
-                sh """
-                aws ec2 authorize-security-group-ingress \
-                    --group-id ${securityGroupId} \
-                    --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                """
-                echo "Ingress rule added successfully."
-            } catch (Exception e) {
-                echo "Ingress rule for port 80 already exists, skipping rule creation."
+            steps {
+                script {
+                    echo "Checking if ECS cluster exists or creating it..."
+                    sh """
+                    aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query "clusters[?status=='ACTIVE'].clusterName" --output text || \
+                    aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
+                    """
+                }
             }
         }
-    }
-}
+
+        stage('Create Security Group') {
+            steps {
+                script {
+                    echo "Checking if Security Group exists..."
+                    def securityGroupId = sh(
+                        script: '''
+                        aws ec2 describe-security-groups \
+                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=${VPC_ID} \
+                            --query "SecurityGroups[0].GroupId" --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    if (securityGroupId == "None") {
+                        echo "Security Group not found. Creating a new Security Group..."
+                        def newSecurityGroup = sh(
+                            script: '''
+                            aws ec2 create-security-group \
+                                --group-name dev-sg \
+                                --description "Dev security group" \
+                                --vpc-id ${VPC_ID} \
+                                --output json
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        // Use jq to parse the JSON output
+                        securityGroupId = sh(
+                            script: """
+                            echo '${newSecurityGroup}' | jq -r '.GroupId'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        echo "Created new Security Group with ID: ${securityGroupId}"
+                    } else {
+                        echo "Found existing Security Group with ID: ${securityGroupId}"
+                    }
+
+                    // Store the security group ID in the environment
+                    env.SECURITY_GROUP_ID = securityGroupId
+
+                    echo "Checking for existing ingress rule..."
+                    try {
+                        sh """
+                        aws ec2 authorize-security-group-ingress \
+                            --group-id ${securityGroupId} \
+                            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                        """
+                        echo "Ingress rule added successfully."
+                    } catch (Exception e) {
+                        echo "Ingress rule for port 80 already exists, skipping rule creation."
+                    }
+                }
+            }
+        }
+
         stage('Create Application Load Balancer') {
-    steps {
-        script {
-            echo "Creating an Application Load Balancer..."
-            sh """
-            aws elbv2 create-load-balancer \
-                --name ${ALB_NAME} \
-                --subnets ${SUBNET_IDS} \
-                --security-groups ${SECURITY_GROUP_ID} \
-                --type application \
-                --scheme internet-facing \
-                --region ${AWS_REGION} \
-                --query LoadBalancers[0].LoadBalancerArn \
-                --output text
-            """
+            steps {
+                script {
+                    echo "Creating an Application Load Balancer..."
+                    def subnetIds = SUBNET_IDS.split(',')
+                    sh """
+                    aws elbv2 create-load-balancer \
+                        --name ${ALB_NAME} \
+                        --subnets ${subnetIds.join(' ')} \
+                        --security-groups ${SECURITY_GROUP_ID} \
+                        --type application \
+                        --scheme internet-facing \
+                        --region ${AWS_REGION} \
+                        --query LoadBalancers[0].LoadBalancerArn \
+                        --output text
+                    """
+                }
+            }
         }
-    }
-}
+
         stage('Create Target Group') {
             steps {
                 script {
