@@ -51,12 +51,13 @@ pipeline {
                 script {
                     echo "Creating a Security Group..."
                     sh """
-                    SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name dev-sg --description "Security group for ECS service" --vpc-id vpc-0bd5e05b7eb883a10 --region ${AWS_REGION} --query 'GroupId' --output text)
-                    echo "Security Group Created: $SECURITY_GROUP_ID"
-                    aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                    aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 3000 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                    echo "export SECURITY_GROUP=$SECURITY_GROUP_ID" >> env.properties
+                    SECURITY_GROUP_ID=\$(aws ec2 create-security-group --group-name dev-sg --description "Security group for ECS service" --vpc-id vpc-0bd5e05b7eb883a10 --region ${AWS_REGION} --query 'GroupId' --output text)
+                    echo "Security Group Created: \$SECURITY_GROUP_ID"
+                    aws ec2 authorize-security-group-ingress --group-id \$SECURITY_GROUP_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                    aws ec2 authorize-security-group-ingress --group-id \$SECURITY_GROUP_ID --protocol tcp --port 3000 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+                    echo "export SECURITY_GROUP=\$SECURITY_GROUP_ID" >> env.properties
                     """
+
                 }
             }
         }
