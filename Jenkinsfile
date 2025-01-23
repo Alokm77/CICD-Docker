@@ -160,11 +160,10 @@ pipeline {
             }
         }
 
-      IMAGE_URL="httpd:2.4"
-CPU=256
-MEMORY=512
-
-export TASK_DEFINITION=$(cat << EOF
+     stage('Create ECS Task Definition') {
+    steps {
+        script {
+            def TASK_DEFINITION = """
 {
    "containerDefinitions": [
       {
@@ -204,10 +203,12 @@ export TASK_DEFINITION=$(cat << EOF
        "FARGATE"
     ]
 }
-EOF
-)
-
-aws ecs register-task-definition --cli-input-json "$TASK_DEFINITION"
+"""
+            // Register the ECS task definition
+            sh "aws ecs register-task-definition --cli-input-json '${TASK_DEFINITION}'"
+        }
+    }
+}
         stage('Create ECS Service') {
             steps {
                 script {
