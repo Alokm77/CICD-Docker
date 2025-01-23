@@ -160,57 +160,26 @@ pipeline {
             }
         }
 
-        stage('Create ECS Task Definition') {
-    steps {
-        script {
-            echo "Creating ECS Task Definition..."
-            try {
-                // Write the task definition JSON to a file
-                sh '''
-                cat > task-definition.json <<'EOF'
-                {
-                    "family": "dev-task",
-                    "containerDefinitions": [
-                        {
-                            "name": "dev-container",
-                            "image": "905417999377.dkr.ecr.us-east-1.amazonaws.com/dev-repo:latest",
-                            "memory": 512,
-                            "cpu": 256,
-                            "essential": true,
-                            "portMappings": [
-                                {
-                                    "containerPort": 80,
-                                    "hostPort": 80,
-                                    "protocol": "tcp"
-                                },
-                                {
-                                    "containerPort": 3000,
-                                    "hostPort": 3000,
-                                    "protocol": "tcp"
-                                }
-                            ]
-                        }
-                    ],
-                    "networkMode": "awsvpc",
-                    "requiresCompatibilities": ["FARGATE"],
-                    "cpu": "256",
-                    "memory": "512"
-                }
-                EOF
-                '''
-                // Verify the file content
-                sh "cat task-definition.json"
-                // Register the task definition
-                sh """
-                aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
-                """
-            } catch (Exception e) {
-                echo "Failed to create task definition: ${e}"
-                throw e
-            }
-        }
-    }
-}
+       sh """
+aws ecs register-task-definition \
+  --family dev-task \
+  --container-definitions '[{
+    "name": "dev-container",
+    "image": "905417999377.dkr.ecr.us-east-1.amazonaws.com/dev-repo:latest",
+    "memory": 512,
+    "cpu": 256,
+    "essential": true,
+    "portMappings": [
+        {"containerPort": 80, "hostPort": 80, "protocol": "tcp"},
+        {"containerPort": 3000, "hostPort": 3000, "protocol": "tcp"}
+    ]
+  }]' \
+  --network-mode awsvpc \
+  --requires-compatibilities FARGATE \
+  --cpu 256 \
+  --memory 512 \
+  --region ${AWS_REGION}
+"""
         stage('Create ECS Service') {
             steps {
                 script {
