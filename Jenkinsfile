@@ -37,16 +37,16 @@ pipeline {
         }
 
         stage('Create ECS Cluster') {
-            steps {
-                script {
-                    echo "Checking if ECS cluster exists or creating it..."
-                    sh """
-                    aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query 'clusters[?status==\`ACTIVE\`].clusterName' --output text || \
-                    aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
-                    """
-                }
-            }
+    steps {
+        script {
+            echo "Checking if ECS cluster exists or creating it..."
+            sh """
+            aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query "clusters[?status=='ACTIVE'].clusterName" --output text || \
+            aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
+            """
         }
+    }
+}
 
         stage('Create Security Group') {
             steps {
