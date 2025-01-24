@@ -179,6 +179,7 @@ pipeline {
                                     "image": "${IMAGE_URL}",
                                     "memory": ${MEMORY},
                                     "cpu": ${CPU},
+                                    "executionRoleArn": "arn:aws:iam::905417999377:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
                                     "essential": true,
                                     "portMappings": [
                                         {
