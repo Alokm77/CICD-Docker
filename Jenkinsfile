@@ -22,9 +22,6 @@ pipeline {
         ALB_NAME = 'dev-alb'
         TARGET_GROUP_NAME = 'dev-target-group'
         VPC_ID = 'vpc-0bd5e05b7eb883a10'  // Replace with your actual VPC ID
-        IMAGE_URL = "httpd:2.4"
-        CPU = "256"
-        MEMORY = "512"
     }
     stages {
         stage('Create ECR Repository') {
@@ -38,13 +35,14 @@ pipeline {
                 }
             }
         }
+    }
 
         stage('Create ECS Cluster') {
             steps {
                 script {
                     echo "Checking if ECS cluster exists or creating it..."
                     sh """
-                    aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query "clusters[?status=='ACTIVE'].clusterName" --output text || \
+                    aws ecs describe-clusters --clusters ${ECS_CLUSTER} --region ${AWS_REGION} --query 'clusters[?status==`ACTIVE`].clusterName' --output text || \
                     aws ecs create-cluster --cluster-name ${ECS_CLUSTER} --region ${AWS_REGION}
                     """
                 }
@@ -52,71 +50,73 @@ pipeline {
         }
 
         stage('Create Security Group') {
-            steps {
-                script {
-                    echo "Checking if Security Group exists..."
-                    def securityGroupId = sh(
-                        script: '''
-                        aws ec2 describe-security-groups \
-                            --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=${VPC_ID} \
-                            --query "SecurityGroups[0].GroupId" --output text
-                        ''',
-                        returnStdout: true
-                    ).trim()
+    steps {
+        script {
+            echo "Checking if Security Group exists..."
+            def securityGroupId = sh(
+                script: '''
+                aws ec2 describe-security-groups \
+                    --filters Name=group-name,Values=dev-sg Name=vpc-id,Values=vpc-0bd5e05b7eb883a10 \
+                    --query "SecurityGroups[0].GroupId" --output text
+                ''',
+                returnStdout: true
+            ).trim()
 
-                    if (securityGroupId == "None") {
-                        echo "Security Group not found. Creating a new Security Group..."
-                        def newSecurityGroup = sh(
-                            script: '''
-                            aws ec2 create-security-group \
-                                --group-name dev-sg \
-                                --description "Dev security group" \
-                                --vpc-id ${VPC_ID} \
-                                --output json
-                            ''',
-                            returnStdout: true
-                        ).trim()
+            if (securityGroupId == "None") {
+                echo "Security Group not found. Creating a new Security Group..."
+                def newSecurityGroup = sh(
+                    script: '''
+                    aws ec2 create-security-group \
+                        --group-name dev-sg \
+                        --description "Dev security group" \
+                        --vpc-id vpc-0bd5e05b7eb883a10 \
+                        --output json
+                    ''',
+                    returnStdout: true
+                ).trim()
 
-                        // Use jq to parse the JSON output
-                        securityGroupId = sh(
-                            script: """
-                            echo '${newSecurityGroup}' | jq -r '.GroupId'
-                            """,
-                            returnStdout: true
-                        ).trim()
-                        echo "Created new Security Group with ID: ${securityGroupId}"
-                    } else {
-                        echo "Found existing Security Group with ID: ${securityGroupId}"
-                    }
-
-                    // Store the security group ID in the environment
-                    env.SECURITY_GROUP_ID = securityGroupId
-
-                    echo "Checking for existing ingress rule..."
-                    try {
-                        sh """
-                        aws ec2 authorize-security-group-ingress \
-                            --group-id ${securityGroupId} \
-                            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
-                        """
-                        echo "Ingress rule added successfully."
-                    } catch (Exception e) {
-                        echo "Ingress rule for port 80 already exists, skipping rule creation."
-                    }
-                }
+                // Extract GroupId from the JSON response
+                def jsonResponse = readJSON text: newSecurityGroup
+                securityGroupId = jsonResponse.GroupId
+                echo "Created new Security Group with ID: ${securityGroupId}"
+            } else {
+                echo "Found existing Security Group with ID: ${securityGroupId}"
             }
-        }
 
+           script {
+    echo "Checking for existing ingress rule..."
+    def ruleExists = sh(
+        script: """
+        aws ec2 describe-security-groups \
+            --group-ids ${securityGroupId} \
+            --query "SecurityGroups[0].IpPermissions[?FromPort=='80' && ToPort=='80' && IpProtocol=='tcp' && contains(IpRanges[].CidrIp, '0.0.0.0/0')]" \
+            --output text
+        """,
+        returnStdout: true
+    ).trim()
+
+    if (ruleExists == "") {
+        echo "Ingress rule for port 80 doesn't exist. Adding it now."
+        sh """
+        aws ec2 authorize-security-group-ingress \
+            --group-id ${securityGroupId} \
+            --protocol tcp --port 80 --cidr 0.0.0.0/0 --region ${AWS_REGION}
+        """
+        echo "Ingress rule added successfully."
+    } else {
+        echo "Ingress rule for port 80 already exists. Skipping rule creation."
+    }
+}
+}
         stage('Create Application Load Balancer') {
             steps {
                 script {
                     echo "Creating an Application Load Balancer..."
-                    def subnetIds = SUBNET_IDS.split(',')
                     sh """
                     aws elbv2 create-load-balancer \
                         --name ${ALB_NAME} \
-                        --subnets ${subnetIds.join(' ')} \
-                        --security-groups ${SECURITY_GROUP_ID} \
+                        --subnets ${SUBNET_IDS} \
+                        --security-groups ${env.SECURITY_GROUP_ID} \
                         --type application \
                         --scheme internet-facing \
                         --region ${AWS_REGION} \
@@ -167,50 +167,39 @@ pipeline {
             steps {
                 script {
                     echo "Creating ECS Task Definition..."
-                    try {
-                        // Write the task definition JSON to a file
-                        sh '''
-                        cat > task-definition.json <<'EOF'
-                        {
-                            "family": "${TASK_DEFINITION_NAME}",
-                            "containerDefinitions": [
-                                {
-                                    "name": "${CONTAINER_NAME}",
-                                    "image": "${IMAGE_URL}",
-                                    "memory": ${MEMORY},
-                                    "cpu": ${CPU},
-                                    "essential": true,
-                                    "portMappings": [
-                                        {
-                                            "containerPort": ${CONTAINER_PORT_1},
-                                            "hostPort": ${CONTAINER_PORT_1},
-                                            "protocol": "tcp"
-                                        },
-                                        {
-                                            "containerPort": ${CONTAINER_PORT_2},
-                                            "hostPort": ${CONTAINER_PORT_2},
-                                            "protocol": "tcp"
-                                        }
-                                    ]
-                                }
-                            ],
-                            "networkMode": "awsvpc",
-                            "requiresCompatibilities": ["FARGATE"],
-                            "cpu": "${CPU}",
-                            "memory": "${MEMORY}"
-                        }
-                        EOF
-                        '''
-                        // Verify the file content
-                        sh "cat task-definition.json"
-                        // Register the task definition
-                        sh """
-                        aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
-                        """
-                    } catch (Exception e) {
-                        echo "Failed to create task definition: ${e}"
-                        throw e
+                    sh """
+                    cat > task-definition.json <<EOF
+                    {
+                        "family": "${TASK_DEFINITION_NAME}",
+                        "containerDefinitions": [
+                            {
+                                "name": "${CONTAINER_NAME}",
+                                "image": "${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}",
+                                "memory": 512,
+                                "cpu": 256,
+                                "essential": true,
+                                "portMappings": [
+                                    {
+                                        "containerPort": ${CONTAINER_PORT_1},
+                                        "hostPort": ${CONTAINER_PORT_1},
+                                        "protocol": "tcp"
+                                    },
+                                    {
+                                        "containerPort": ${CONTAINER_PORT_2},
+                                        "hostPort": ${CONTAINER_PORT_2},
+                                        "protocol": "tcp"
+                                    }
+                                ]
+                            }
+                        ],
+                        "networkMode": "awsvpc",
+                        "requiresCompatibilities": ["FARGATE"],
+                        "cpu": "256",
+                        "memory": "512"
                     }
+                    EOF
+                    aws ecs register-task-definition --cli-input-json file://task-definition.json --region ${AWS_REGION}
+                    """
                 }
             }
         }
@@ -231,8 +220,9 @@ pipeline {
                         --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[${SECURITY_GROUP_ID}],assignPublicIp=ENABLED}" \
                         --region ${AWS_REGION}
                     """
+                    }
                 }
             }
         }
     }
-}
+}    
